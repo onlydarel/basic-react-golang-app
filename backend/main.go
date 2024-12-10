@@ -6,8 +6,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/joho/godotenv"
-	"github.com/onlydarel/basic-react-golang-app/driver"
-	"github.com/onlydarel/basic-react-golang-app/models"
+	"github.com/onlydarel/basic-react-golang-app/internal/api"
+	"github.com/onlydarel/basic-react-golang-app/internal/driver"
 	"log"
 	"os"
 )
@@ -47,94 +47,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Routing for main section
-	app.Get("/api/todos", func(c *fiber.Ctx) error {
-		rows, err := db.SQL.Query("SELECT id, status, body FROM todos")
-		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "Failed to query todos"})
-		}
-		defer rows.Close()
+	api.SetDatabase(db.SQL)
 
-		var todos []models.Todo
-		for rows.Next() {
-			var todo models.Todo
-			if err := rows.Scan(&todo.ID, &todo.Status, &todo.Body); err != nil {
-				return c.Status(500).JSON(fiber.Map{"error": "Failed to scan todos"})
-			}
-			todos = append(todos, todo)
-		}
-
-		return c.JSON(todos)
-	})
-
-	// Create a Todo
-	app.Post("/api/todos", func(c *fiber.Ctx) error {
-		todo := &models.Todo{}
-
-		if err := c.BodyParser(todo); err != nil {
-			return err
-		}
-
-		if todo.Body == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "Todo body is required"})
-		}
-
-		_, err = db.SQL.Exec("insert into todos (status, body) values ($1, $2)", false, todo.Body)
-		if err != nil {
-			log.Fatal("Error inserting todo", err)
-		}
-
-		return c.Status(201).JSON(todo)
-	})
-
-	// Update a Todo's status
-	app.Patch("/api/todos/:id", func(c *fiber.Ctx) error {
-		id := c.Params("id")
-		fmt.Println(id)
-		if id == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "Todo id is required"})
-		}
-
-		// Fetch the current status of the todo with the specified id
-		var todo models.Todo
-		err := db.SQL.QueryRow("SELECT id, status FROM todos WHERE id = $1", id).Scan(&todo.ID, &todo.Status)
-		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "Failed to query todos"})
-		}
-
-		// Toggle the completion status
-		newStatus := !todo.Status
-		_, err = db.SQL.Exec("UPDATE todos SET status = $1 WHERE id = $2", newStatus, id)
-		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "Failed to update todo"})
-		}
-
-		// Update the todo struct and respond with it
-		todo.Status = newStatus
-		return c.Status(201).JSON(todo)
-	})
-
-	// Delete a todo
-	app.Delete("/api/todos/:id", func(c *fiber.Ctx) error {
-		delete_id := c.Params("id")
-		if delete_id == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "Todo id is required"})
-		}
-
-		var todo models.Todo
-		err := db.SQL.QueryRow("SELECT id FROM todos WHERE id = $1", delete_id).Scan(&todo.ID)
-		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "Todo not found, enter the correct id!"})
-		}
-
-		_, err = db.SQL.Exec("delete from todos where id = $1", delete_id)
-		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "Failed to delete todo"})
-		}
-
-		return c.Status(200).JSON(fiber.Map{"msg": "successfully deleted todo"})
-
-	})
+	app.Get("/api/todos", api.GetTodos)
+	app.Post("/api/todos", api.AddTodos)
+	app.Patch("/api/todos/:id", api.UpdateTodo)
+	app.Delete("api/todos/:id", api.DeleteTodo)
 
 	log.Fatal(app.Listen(PORT))
 }
